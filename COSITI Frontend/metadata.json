@@ -1,0 +1,6 @@
+{
+  "name": "COSITI — Gestion des Adhérents et Cotisations",
+  "description": "Application professionnelle de gestion des adhérents, des cotisations, des immatriculations et des dossiers de prestations sociales pour la COSITI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
