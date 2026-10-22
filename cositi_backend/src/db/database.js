@@ -15,6 +15,14 @@ const baseOptions = () => ({
   port: config.db.port,
   user: config.db.user,
   password: config.db.password,
+  ...(config.db.ssl
+    ? {
+        ssl: {
+          ...(config.db.sslCa ? { ca: config.db.sslCa } : {}),
+          rejectUnauthorized: true,
+        },
+      }
+    : {}),
   charset: 'utf8mb4',
   dateStrings: true, // DATE/DATETIME renvoyés en texte (pas de conversion de fuseau)
   decimalNumbers: true, // DECIMAL renvoyés en nombres

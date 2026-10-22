@@ -25,6 +25,8 @@ export const config = {
     user: env.DB_USER || 'cositi',
     password: env.DB_PASSWORD ?? '',
     name: env.DB_NAME || 'cositi_ci',
+    ssl: bool(env.DB_SSL, false),
+    sslCa: env.DB_SSL_CA || '',
     poolSize: int(env.DB_POOL_SIZE, 10),
     // Crée la base si elle n'existe pas (nécessite le privilège CREATE)
     autoCreate: bool(env.DB_AUTO_CREATE, true),
