@@ -20,6 +20,7 @@ import { parametres, journal, systeme } from './routes/systeme.routes.js';
 import * as e from './routes/entities.js';
 import { mount, mounts } from './docs/registry.js';
 import { buildOpenApi } from './docs/openapi.js';
+import { createApp } from './app.js';
 
 export function createApp() {
   const app = express();
