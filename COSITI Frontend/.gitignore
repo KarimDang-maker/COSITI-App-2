@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+!.env.production
+.env.production
+*.pem
+*.key
+*.crt
+*.cer
