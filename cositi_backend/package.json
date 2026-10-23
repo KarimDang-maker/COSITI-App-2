@@ -1,5 +1,5 @@
 {
-  "name": "cositi-backend",
+  "name": "cositi_backend",
   "version": "2.0.0",
   "description": "API REST COSITI (MySQL) — adhérents, cotisations, dossiers CNPS, finances DAF, paie, direction, audit, Swagger",
   "private": true,
