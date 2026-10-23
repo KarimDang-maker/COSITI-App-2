@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Client de l'API COSITI (Backend/ — Node + MySQL).
  *
  * - Jeton d'accès en mémoire, jeton de renouvellement en sessionStorage (la session se ferme avec le navigateur).
@@ -8,7 +8,9 @@
  */
 import type { Utilisateur } from '../types';
 
-const BASE = ((import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_URL || '/api').replace(/\/$/, '');
+const viteEnv = (import.meta as unknown as { env?: Record<string, string | boolean> }).env;
+const configuredBase = String(viteEnv?.VITE_API_URL || (viteEnv?.PROD ? 'https://cositibackend.vercel.app/api' : '/api'));
+const BASE = (configuredBase.startsWith('/') || /^https?:\/\//i.test(configuredBase) ? configuredBase : `https://${configuredBase}`).replace(/\/$/, '');
 const REFRESH_KEY = 'cositi_refresh_token';
 
 export interface ModuleAction {
