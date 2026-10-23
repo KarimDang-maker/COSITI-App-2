@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { initDb, closeDb } from './db/database.js';
 import { bootstrap } from './db/seed.js';
-import { createApp } from './app.js';
+import app from './app.js';
 
 // Le serveur HTTP n'écoute qu'une fois la base prête (connexion, base, tables, données initiales).
 try {
@@ -15,7 +15,7 @@ try {
   process.exit(1);
 }
 
-const app = createApp();
+
 const server = app.listen(config.port, () => {
   console.log(`COSITI API prête sur http://localhost:${config.port}/api  (env: ${config.env})`);
   console.log(`Documentation Swagger : http://localhost:${config.port}/api/docs`);

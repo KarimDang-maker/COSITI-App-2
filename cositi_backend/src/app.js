@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
 import { config } from './config.js';
+import { initDb } from './db/database.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 import authRoutes from './routes/auth.routes.js';
 import utilisateursRoutes from './routes/utilisateurs.routes.js';
@@ -20,6 +21,8 @@ import { parametres, journal, systeme } from './routes/systeme.routes.js';
 import * as e from './routes/entities.js';
 import { mount, mounts } from './docs/registry.js';
 import { buildOpenApi } from './docs/openapi.js';
+let dbInitialization;
+
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
@@ -40,6 +43,14 @@ export function createApp() {
     })
   );
   app.use(express.json({ limit: '1mb' }));
+
+  app.use((_req, _res, next) => {
+    dbInitialization ??= initDb({ log: (message) => console.log('[db] ' + message) }).catch((error) => {
+      dbInitialization = undefined;
+      throw error;
+    });
+    dbInitialization.then(() => next()).catch(next);
+  });
 
   // Limite globale par IP (anti-abus), plus large que celle de /auth
   app.use(
@@ -92,3 +103,6 @@ export function createApp() {
   app.use(errorHandler);
   return app;
 }
+
+const app = createApp();
+export default app;
