@@ -55,7 +55,7 @@ export const config = {
   seed: {
     // Base vide au démarrage : true => importe database_mysql/ ; false => un seul compte administrateur
     fromDump: bool(env.SEED_FROM_DUMP ?? env.SEED_DEMO_DATA, true),
-    dumpPath: env.DUMP_PATH || fileURLToPath(new URL('../../database_mysql/cositi_database_mysql_dump.sql', import.meta.url)),
+    dumpPath: env.DUMP_PATH || fileURLToPath(new URL('../database/COSITI DATABASE/cositi_database_mysql_dump_2026-10-26.sql', import.meta.url)),
     defaultPassword: env.SEED_DEFAULT_PASSWORD || 'Cositi@2026!',
     // true : les comptes importés doivent changer leur mot de passe à la 1re connexion (recommandé en production)
     forcePasswordChange: bool(env.SEED_FORCE_PASSWORD_CHANGE, false),

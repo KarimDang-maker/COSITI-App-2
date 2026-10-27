@@ -2,6 +2,7 @@ import { repos } from '../db/repository.js';
 import { sumMoney, groupSumMoney, round2 } from '../utils/money.js';
 import { resolveOrigineDecaissement } from '../utils/business.js';
 import { MOIS_FR } from '../utils/dates.js';
+import { estStatutImmatricule } from '../utils/business.js';
 
 /**
  * Modèles de lecture des écrans de rapports : TOUS les agrégats (totaux, ventilations, réserve CNPS, flux de trésorerie,
@@ -22,6 +23,12 @@ function indexerCotisations(adherents, cotisations) {
     if (a) parAdherent.get(a.id).push(c);
   }
   return parAdherent;
+}
+
+function cotisationsNonAffectees(adherents, cotisations) {
+  const ids = new Set(adherents.map((a) => a.id));
+  const matricules = new Set(adherents.map((a) => a.matricule).filter(Boolean));
+  return cotisations.filter((c) => !ids.has(c.adherentId) && (!c.matricule || !matricules.has(c.matricule)));
 }
 
 const prefixeMois = (mois, annee) => {
@@ -83,7 +90,10 @@ export async function rapprochement({ periode = 'GLOBAL', mois, annee, banque, b
     .filter((r) => r.montantReserve > 0 || r.cotisationsPercues > 0);
 
   const totalFondsBanque = sumMoney(versements);
-  const totalReserveCnps = sumMoney(reserve, 'montantReserve');
+  const cotisationsNonAffecteesMois = cotisationsNonAffectees(adherents, cotisations);
+  const totalReserveCnps = base === 'COTISATIONS_PERCUES'
+    ? sumMoney(cotisations)
+    : sumMoney(reserve, 'montantReserve');
 
   const exploitation = depenses.filter((d) => resolveOrigineDecaissement(d) === ORIGINE_CNPS);
   const apportPca = depenses.filter((d) => resolveOrigineDecaissement(d) === ORIGINE_PCA);
@@ -93,7 +103,18 @@ export async function rapprochement({ periode = 'GLOBAL', mois, annee, banque, b
   return {
     periode: { mode: periode, mois: mois ?? null, annee: annee ?? null, banque: banque ?? null, base },
     fondsBanque: { total: totalFondsBanque, nombre: versements.length, versements },
-    reserveCnps: { total: totalReserveCnps, nombreAdherents: reserve.length, adherents: reserve },
+    reserveCnps: {
+      total: totalReserveCnps,
+      nombreAdherents: reserve.length,
+      adherents: reserve,
+      cotisationsNonAffectees: {
+        nombre: cotisationsNonAffecteesMois.length,
+        total: sumMoney(cotisationsNonAffecteesMois),
+        cotisations: cotisationsNonAffecteesMois.map(({ id, adherentId, matricule, adherentNomPrenom, datePaiement, montant }) => ({
+          id, adherentId, matricule, adherentNomPrenom, datePaiement, montant,
+        })),
+      },
+    },
     soldeReelBanque: round2(totalFondsBanque - totalReserveCnps),
     tauxCouverture: pct(totalFondsBanque, totalReserveCnps),
     flux: {
@@ -123,6 +144,7 @@ export async function etatMensuel({ mois, annee, financesAutorisees }) {
     .filter((c) => c.mois === mois && Number(c.annee) === Number(annee))
     .sort((a, b) => new Date(b.datePaiement) - new Date(a.datePaiement));
   const totalCotisations = sumMoney(cotisationsMois);
+  const cotisationsNonAffecteesMois = cotisationsNonAffectees(adherents, cotisationsMois);
 
   const moisParAdh = indexerCotisations(adherents, cotisationsMois);
   const toutesParAdh = indexerCotisations(adherents, cotisAll);
@@ -143,7 +165,7 @@ export async function etatMensuel({ mois, annee, financesAutorisees }) {
       cumulTotal,
       seuil15000Atteint: cumulTotal >= seuil,
       aCotiseCeMois: montantMois > 0,
-      estImmatricule: a.statutImmatriculation === 'Immatriculé' || Boolean(a.numeroCnps && a.numeroCnps.trim()),
+      estImmatricule: estStatutImmatricule(a.statutImmatriculation) || Boolean(a.numeroCnps && a.numeroCnps.trim()),
       gestionnaireNom: gest.get(a.gestionnaireId)?.nom || 'Non affecté',
     };
   });
@@ -159,7 +181,12 @@ export async function etatMensuel({ mois, annee, financesAutorisees }) {
 
   const out = {
     periode: { mois, annee: Number(annee), prefixe },
-    cotisations: { liste: cotisationsMois, total: totalCotisations, nombre: cotisationsMois.length },
+    cotisations: {
+      liste: cotisationsMois,
+      total: totalCotisations,
+      nombre: cotisationsMois.length,
+      nonAffectees: { liste: cotisationsNonAffecteesMois, nombre: cotisationsNonAffecteesMois.length, total: sumMoney(cotisationsNonAffecteesMois) },
+    },
     statsParMode: Object.entries(parMode).map(([mode, montant]) => ({ mode, montant, pourcentage: totalCotisations > 0 ? ((montant / totalCotisations) * 100).toFixed(1) : '0' })),
     statsParAgent: Object.entries(agents).map(([agent, v]) => ({ agent, montant: v.c / 100, count: v.n, pourcentage: totalCotisations > 0 ? ((v.c / 100 / totalCotisations) * 100).toFixed(1) : '0' })),
     nominatif,

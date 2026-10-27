@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { config } from '../config.js';
 import { repos } from '../db/repository.js';
-import { COLLECTIONS, tx } from '../db/database.js';
+import { COLLECTIONS, query, tx } from '../db/database.js';
 import { authenticate, authorize, requireConfirmation, requireMaintenanceCode } from '../middleware/auth.js';
 import { validate, isoDate, pageQuery } from '../middleware/validate.js';
 import { ok, page } from '../utils/respond.js';
@@ -63,6 +63,8 @@ parametres.put('/', authorize('canManageParametres'), validate({ body: paramsSch
         throw forbidden('Ancien code de confirmation incorrect.');
       }
       patch.codeConfirmationHash = await hashSecret(codeConfirmationSecurite);
+      // Le secret en clair du dump n'est effacé qu'après une rotation explicite par un administrateur.
+      await query('UPDATE parametres SET code_confirmation_securite = ? WHERE id = 1', ['']);
       patch.joursVerificationCycle = patch.joursVerification;
     }
     if (patch.joursVerification) patch.joursVerificationCycle = patch.joursVerification;

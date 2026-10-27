@@ -9,6 +9,13 @@ export const formatFCFA = (amount) => {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(n) + ' FCFA';
 };
 
+/** Accepte les variantes de casse, d'accents et d'espaces issues des imports historiques. */
+export const estStatutImmatricule = (value) => String(value ?? '')
+  .trim()
+  .normalize('NFD')
+  .replace(/\p{Diacritic}/gu, '')
+  .toLocaleLowerCase('fr') === 'immatricule';
+
 export function generateNextMatricule(derniereSequence) {
   const nextSeq = (derniereSequence || 0) + 1;
   return { matricule: `COSITI-${String(nextSeq).padStart(4, '0')}`, sequence: nextSeq };
@@ -135,7 +142,7 @@ export function generateAlerts(adherents, cotisations, dossiers, parametres, ref
     }
 
     // B. Seuil d'immatriculation atteint
-    if (stats.seuilAtteint && adh.statutImmatriculation !== 'Immatriculé') {
+    if (stats.seuilAtteint && !estStatutImmatricule(adh.statutImmatriculation)) {
       alerts.push({
         ...base,
         id: `alert-seuil-${adh.id}`,
@@ -165,7 +172,7 @@ export function generateAlerts(adherents, cotisations, dossiers, parametres, ref
     }
 
     // D. Dossier d'allocations à constituer (adhérents immatriculés, hors travailleurs sans enfant)
-    if (adh.statutImmatriculation === 'Immatriculé') {
+    if (estStatutImmatricule(adh.statutImmatriculation)) {
       const dossier = dossiers.find((d) => d.adherentId === adh.id || d.matricule === adh.matricule);
       const sansEnfant =
         adh.sansEnfant === true || dossier?.sansEnfant === true || dossier?.statut === 'Sans enfant (Non éligible allocations)';

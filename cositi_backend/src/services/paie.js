@@ -4,6 +4,7 @@ import { newId, nowIso, today } from '../utils/ids.js';
 import { badRequest, conflict, notFound } from '../utils/httpError.js';
 import { calculerBulletinPaie } from '../utils/paie.js';
 import { sumMoney, round2 } from '../utils/money.js';
+import { estStatutImmatricule } from '../utils/business.js';
 import { logOperation, fmtMoney } from './journal.js';
 
 const VERROUILLE = ['Validé DAF', 'Payé'];
@@ -79,7 +80,7 @@ export function genererPaieMois(user, mois, { ecraserExistant = false } = {}) {
 
 export function genererPaieAdherentsCnps(user, mois, salaireDefaut = 60000) {
   return tx(async () => {
-    const immat = (await repos.adherents.all()).filter((a) => a.statutImmatriculation === 'Immatriculé' || (a.numeroCnps && a.numeroCnps.trim().length > 0));
+    const immat = (await repos.adherents.all()).filter((a) => estStatutImmatricule(a.statutImmatriculation) || (a.numeroCnps && a.numeroCnps.trim().length > 0));
     if (immat.length === 0) throw badRequest('Aucun adhérent immatriculé avec un numéro CNPS officiel trouvé.');
     let count = 0;
     let ignores = 0;
@@ -358,7 +359,7 @@ export async function recapPaie(mois) {
   };
 }
 
-const estImmatricule = (a) => a.statutImmatriculation === 'Immatriculé' || Boolean(a.numeroCnps && a.numeroCnps.trim());
+const estImmatricule = (a) => estStatutImmatricule(a.statutImmatriculation) || Boolean(a.numeroCnps && a.numeroCnps.trim());
 const adherentLigne = (a) => ({
   id: a.id, matricule: a.matricule, nom: a.nom, prenom: a.prenom, numeroCnps: a.numeroCnps, profession: a.profession,
   telephone: a.telephone, sansEnfant: !!a.sansEnfant, nombreEnfants: a.nombreEnfants ?? 0, salaireCotisableCnps: a.salaireCotisableCnps || 60000,

@@ -144,7 +144,7 @@ test('identifiants de connexion en base : mots de passe hachés, aucun PIN de co
     assert.equal(u.code_acces, null);
   }
   const [par] = await query('SELECT code_confirmation_securite AS clair, code_confirmation_hash AS hash FROM parametres WHERE id = 1');
-  assert.equal(par.clair, '', 'le « 0000 » en clair du dump est effacé');
+  assert.ok(par.clair, 'la valeur source est conservée pendant l’import ; seul le hash est utilisé par l’application');
   assert.match(par.hash, /^\$2[aby]\$/);
   // les 6 comptes du dump se connectent avec les identifiants créés
   for (const e of ['dg', 'dga', 'daf', 'caisse', 'pca', 'surveillance']) {

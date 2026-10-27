@@ -206,7 +206,7 @@ test('synthèse : réserve par adhérent (detail=reserves) = cotisations de chaq
   const s = await synthese('?detail=reserves');
   assert.ok(s.reservesAdherents.length > 0);
   const total = Math.round(s.reservesAdherents.reduce((a, r) => a + r.montantReserve, 0) * 100) / 100;
-  assert.equal(total, s.global.reserveCnps.totalReserve, 'la somme des réserves individuelles = réserve globale');
+  assert.equal(total + s.reservesNonAffectees.montant, s.global.reserveCnps.totalReserve, 'réserves attribuées + non affectées = réserve globale');
 });
 
 test('finances : accès réservé à la direction financière', async () => {
@@ -265,12 +265,15 @@ test('contrôle d\'intégrité : détecte une cotisation orpheline, un net incoh
   const token = await h.tokens.daf();
   // Le test précédent a laissé un bulletin en brouillon : l'écart avec la dépense de paie est signalé, mais comme simple avertissement
   const transitoire = (await h.call('GET', '/finances/controle', { token })).data;
-  assert.equal(transitoire.ok, true, 'paie en cours de révision : pas une erreur');
+  const orphelinesSource = transitoire.anomalies.filter((a) => a.code === 'COTISATION_ORPHELINE').length;
+  assert.ok(orphelinesSource > 0, 'les anomalies du dump sont signalées sans réécrire les données sources');
+  assert.equal(transitoire.ok, false, 'les cotisations orphelines source restent une erreur');
   assert.ok(transitoire.anomalies.some((a) => a.code === 'PAIE_DEPENSE_ECART' && a.gravite === 'avertissement'));
   await h.call('POST', '/paie/valider', { token, body: { mois: '2027-01' } }); // revalidation : la dépense se resynchronise
 
   const propre = (await h.call('GET', '/finances/controle', { token })).data;
-  assert.equal(propre.ok, true, JSON.stringify(propre.anomalies.filter((a) => a.gravite === 'erreur')));
+  assert.equal(propre.anomalies.filter((a) => a.code === 'COTISATION_ORPHELINE').length, orphelinesSource);
+  assert.equal(propre.ok, false, 'seules les anomalies préexistantes du dump restent en erreur');
   assert.equal(propre.anomalies.filter((a) => a.code === 'PAIE_DEPENSE_ECART').length, 0, 'plus aucun écart après revalidation');
   assert.ok(propre.verifie.cotisations > 0 && propre.verifie.bulletins > 0);
 
@@ -291,12 +294,14 @@ test('contrôle d\'intégrité : détecte une cotisation orpheline, un net incoh
   for (const c of ['COTISATION_ORPHELINE', 'FRAIS_NET_INCOHERENT', 'RAPPORT_AGENT_TOTAL', 'PAIE_DEPENSE_ECART']) assert.ok(codes.includes(c), `${c} non détecté : ${codes}`);
   assert.ok(sale.resume.erreurs >= 4);
 
-  // remise en état => le contrôle repasse au vert
+  // remise en état => seules les anomalies préexistantes du dump restent visibles
   await repos.cotisations.delete(orphan.id);
   await repos.frais_mobile_money.patch(frais.id, { montantNet: frais.montantNet });
   await repos.rapports_agents.delete(rapport.data.id);
   await repos.depenses.patch(depPaie.id, { montant: depPaie.montant });
-  assert.equal((await h.call('GET', '/finances/controle', { token })).data.ok, true);
+  const restaure = (await h.call('GET', '/finances/controle', { token })).data;
+  assert.equal(restaure.anomalies.filter((a) => a.code === 'COTISATION_ORPHELINE').length, orphelinesSource);
+  assert.equal(restaure.ok, false);
 });
 
 /* ====================================================================== robustesse & persistance */

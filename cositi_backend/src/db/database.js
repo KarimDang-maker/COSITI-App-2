@@ -225,7 +225,8 @@ export async function migrate() {
       }
     }
   }
-  // Le dump déclare dernier_acces en DATETIME alors que ses données sont du texte libre ("En ligne maintenant")
+  // Le dump déclare dernier_acces en DATETIME alors que l'application accepte aussi du texte libre.
+  // La conversion conserve les valeurs existantes sous forme de texte.
   const [[col]] = await pool.query("SELECT DATA_TYPE AS t FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'utilisateurs' AND COLUMN_NAME = 'dernier_acces'", [config.db.name]);
   if (col && col.t !== 'varchar') await pool.query('ALTER TABLE `utilisateurs` MODIFY `dernier_acces` VARCHAR(100) DEFAULT NULL');
   // statut « En congé » des gestionnaires (proposé par le front, absent de l'ENUM du dump)
@@ -233,7 +234,5 @@ export async function migrate() {
   if (gs && !String(gs.t).includes('congé')) {
     await pool.query("ALTER TABLE `gestionnaires_portefeuille` MODIFY `statut` ENUM('Actif', 'Inactif', 'En congé') NOT NULL DEFAULT 'Actif'");
   }
-  // import brut du dump par le client mysql : le texte libre est devenu une « date zéro » inutilisable
-  await pool.query("UPDATE `utilisateurs` SET `dernier_acces` = NULL WHERE `dernier_acces` LIKE '0000-00-00%'");
   return report;
 }

@@ -121,10 +121,19 @@ export async function syntheseFinanciere({ du, au, detail } = {}) {
   };
 
   if (detail === 'reserves') {
+    const adherentById = new Map(adherents.map((a) => [a.id, a]));
+    const adherentByMatricule = new Map(adherents.map((a) => [a.matricule, a]));
+    const affecter = (c) => adherentById.get(c.adherentId) || adherentByMatricule.get(c.matricule);
+    const parAdherent = new Map(adherents.map((a) => [a.id, []]));
+    const nonAffectees = [];
+    for (const c of cotisations) {
+      const adherent = affecter(c);
+      if (adherent) parAdherent.get(adherent.id).push(c);
+      else nonAffectees.push(c);
+    }
     out.reservesAdherents = adherents
       .map((a) => {
-        const mine = cotisations.filter((c) => c.adherentId === a.id || c.matricule === a.matricule);
-        const total = sumMoney(mine);
+        const total = sumMoney(parAdherent.get(a.id));
         return {
           id: a.id,
           matricule: a.matricule,
@@ -138,6 +147,15 @@ export async function syntheseFinanciere({ du, au, detail } = {}) {
         };
       })
       .filter((x) => x.montantReserve > 0);
+    // Les cotisations orphelines sont conservées dans la réserve globale, mais ne
+    // doivent pas être attribuées arbitrairement à un adhérent.
+    out.reservesNonAffectees = {
+      nombreCotisations: nonAffectees.length,
+      montant: sumMoney(nonAffectees),
+      cotisations: nonAffectees.map(({ id, adherentId, matricule, adherentNomPrenom, datePaiement, montant }) => ({
+        id, adherentId, matricule, adherentNomPrenom, datePaiement, montant,
+      })),
+    };
   }
   return out;
 }

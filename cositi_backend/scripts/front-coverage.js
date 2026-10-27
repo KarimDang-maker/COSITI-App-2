@@ -1,7 +1,7 @@
 // npm run docs:front : analyse du front (src/) et du back — vérifie que CHAQUE fonctionnalité du front
 // (membre de AppContext utilisé par les composants) correspond à un endpoint réellement exposé.
 // Génère docs/ANALYSE_FRONT_BACK.md.
-import { readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from '../src/app.js';
@@ -9,7 +9,8 @@ import { mounts } from '../src/docs/registry.js';
 import { buildOpenApi } from '../src/docs/openapi.js';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const src = join(root, 'src');
+const backendRoot = fileURLToPath(new URL('../', import.meta.url));
+const src = [join(root, 'COSITI Frontend', 'src'), join(root, 'src')].find(existsSync) || join(root, 'src');
 
 createApp();
 const spec = buildOpenApi({ mounts });
@@ -211,12 +212,12 @@ ${undefinedInContext.map((m) => `- \`${m}\` est appelé par ${[...usage.get(m)].
 4. Les droits affichés (menus, boutons) viennent de la session renvoyée par le serveur (\`permissions\`, \`modules\`) ; le serveur reste seul juge à chaque appel.
 `;
 
-mkdirSync(join(root, 'Backend', 'docs'), { recursive: true });
-writeFileSync(join(root, 'Backend', 'docs', 'ANALYSE_FRONT_BACK.md'), md);
+mkdirSync(join(backendRoot, 'docs'), { recursive: true });
+writeFileSync(join(backendRoot, 'docs', 'ANALYSE_FRONT_BACK.md'), md);
 
 console.log(`Front : ${members.length} membres AppContext, ${usage.size} utilisés par les composants.`);
 console.log(`Back  : ${endpoints.size} endpoints.`);
 console.log(`Non couverts : ${unmapped.length ? unmapped.join(', ') : 'aucun'} | Endpoints manquants : ${missingEndpoints.length ? missingEndpoints.join(' ; ') : 'aucun'} | Membres inconnus : ${unknownMembers.length ? unknownMembers.join(', ') : 'aucun'}`);
-console.log('Rapport : Backend/docs/ANALYSE_FRONT_BACK.md');
+console.log(`Rapport : ${join(backendRoot, 'docs', 'ANALYSE_FRONT_BACK.md')}`);
 console.log(`Endpoints non appelés par le front : ${notCalled.length ? notCalled.join(', ') : 'aucun'} | localStorage : ${localStorageFiles.length ? localStorageFiles.join(', ') : 'aucun'}`);
 process.exit(unmapped.length || missingEndpoints.length || unknownMembers.length || notCalled.length || localStorageFiles.length ? 1 : 0);

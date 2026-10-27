@@ -12,6 +12,8 @@ export async function boot(dbName) {
     NODE_ENV: 'test',
     BCRYPT_ROUNDS: '4',
     SEED_FROM_DUMP: 'true',
+    DB_AUTO_CREATE: 'true',
+    ALLOW_DEMO_RESET: 'true',
     SEED_DEFAULT_PASSWORD: PW,
     SEED_FORCE_PASSWORD_CHANGE: 'false',
     MAX_LOGIN_ATTEMPTS: '5',
@@ -62,6 +64,11 @@ export async function boot(dbName) {
   }
 
   const sessions = {};
+  const emailForRole = async (role) => {
+    const [user] = await db.query('SELECT email FROM utilisateurs WHERE role = ? AND actif = 1 ORDER BY id LIMIT 1', [role]);
+    if (!user) throw new Error(`Compte de test introuvable pour le rôle ${role}.`);
+    return user.email;
+  };
   async function login(email, password = PW) {
     if (sessions[email]) return sessions[email];
     const r = await call('POST', '/auth/login', { body: { email, password } });
@@ -71,16 +78,16 @@ export async function boot(dbName) {
   }
   const tokens = {
     sa: () => login(SA.email, SA.password),
-    dg: () => login('dg@cositi-ci.org'),
-    dga: () => login('dga@cositi-ci.org'),
-    daf: () => login('daf@cositi-ci.org'),
-    caisse: () => login('caisse@cositi-ci.org'),
-    pca: () => login('pca@cositi-ci.org'),
-    cs: () => login('surveillance@cositi-ci.org'),
+    dg: async () => login(await emailForRole('DG')),
+    dga: async () => login(await emailForRole('DGA')),
+    daf: async () => login(await emailForRole('DAF')),
+    caisse: async () => login(await emailForRole('Caissière & Agent d\'enregistrement')),
+    pca: async () => login(await emailForRole('PCA')),
+    cs: async () => login(await emailForRole('Conseil de Surveillance')),
   };
 
   return {
-    base, call, callBinary, login, tokens, config, db,
+    base, call, callBinary, login, emailForRole, tokens, config, db,
     query: db.query,
     /** Simule un redémarrage du serveur : le pool MySQL est fermé puis rouvert, tout est relu depuis la base. */
     async restartDb() {

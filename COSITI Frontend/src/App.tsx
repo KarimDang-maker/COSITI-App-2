@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { Suspense, lazy, useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoginPage } from './components/auth/LoginPage';
@@ -9,30 +9,30 @@ import { Loader2 } from 'lucide-react';
 import { DialogProvider, useDialog } from './context/DialogContext';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
-import { DashboardView } from './components/DashboardView';
-import { AdherentsView } from './components/AdherentsView';
-import { CotisationsView } from './components/CotisationsView';
-import { ImmatriculationsView } from './components/ImmatriculationsView';
-import { DossiersView } from './components/DossiersView';
-import { AlertesView } from './components/AlertesView';
-import { RapportsView } from './components/RapportsView';
-import { EtatsMensuelsView } from './components/EtatsMensuelsView';
-import { UtilisateursView } from './components/UtilisateursView';
-import { ParametresView } from './components/ParametresView';
-import { JournalView } from './components/JournalView';
-import { DepensesView } from './components/finance/DepensesView';
-import { PaieView } from './components/finance/PaieView';
-import { AgendaView } from './components/direction/AgendaView';
-import { GestionnairesView } from './components/GestionnairesView';
-import { RapportsReunionsView } from './components/RapportsReunionsView';
-import { RapportsAgentsCaisseView } from './components/RapportsAgentsCaisseView';
+const DashboardView = lazy(() => import('./components/DashboardView').then((m) => ({ default: m.DashboardView })));
+const AdherentsView = lazy(() => import('./components/AdherentsView').then((m) => ({ default: m.AdherentsView })));
+const CotisationsView = lazy(() => import('./components/CotisationsView').then((m) => ({ default: m.CotisationsView })));
+const ImmatriculationsView = lazy(() => import('./components/ImmatriculationsView').then((m) => ({ default: m.ImmatriculationsView })));
+const DossiersView = lazy(() => import('./components/DossiersView').then((m) => ({ default: m.DossiersView })));
+const AlertesView = lazy(() => import('./components/AlertesView').then((m) => ({ default: m.AlertesView })));
+const RapportsView = lazy(() => import('./components/RapportsView').then((m) => ({ default: m.RapportsView })));
+const EtatsMensuelsView = lazy(() => import('./components/EtatsMensuelsView').then((m) => ({ default: m.EtatsMensuelsView })));
+const UtilisateursView = lazy(() => import('./components/UtilisateursView').then((m) => ({ default: m.UtilisateursView })));
+const ParametresView = lazy(() => import('./components/ParametresView').then((m) => ({ default: m.ParametresView })));
+const JournalView = lazy(() => import('./components/JournalView').then((m) => ({ default: m.JournalView })));
+const DepensesView = lazy(() => import('./components/finance/DepensesView').then((m) => ({ default: m.DepensesView })));
+const PaieView = lazy(() => import('./components/finance/PaieView').then((m) => ({ default: m.PaieView })));
+const AgendaView = lazy(() => import('./components/direction/AgendaView').then((m) => ({ default: m.AgendaView })));
+const GestionnairesView = lazy(() => import('./components/GestionnairesView').then((m) => ({ default: m.GestionnairesView })));
+const RapportsReunionsView = lazy(() => import('./components/RapportsReunionsView').then((m) => ({ default: m.RapportsReunionsView })));
+const RapportsAgentsCaisseView = lazy(() => import('./components/RapportsAgentsCaisseView').then((m) => ({ default: m.RapportsAgentsCaisseView })));
 
 // Modals
 import { PinConfirmModal } from './components/PinConfirmModal';
-import { ReceiptModal } from './components/ReceiptModal';
+const ReceiptModal = lazy(() => import('./components/ReceiptModal').then((m) => ({ default: m.ReceiptModal })));
 import { AdherentModal } from './components/AdherentModal';
 import { CotisationModal } from './components/CotisationModal';
-import { AdherentDetailsModal } from './components/AdherentDetailsModal';
+const AdherentDetailsModal = lazy(() => import('./components/AdherentDetailsModal').then((m) => ({ default: m.AdherentDetailsModal })));
 import { ImmatriculationModal } from './components/ImmatriculationModal';
 import { DossierAllocationsModal } from './components/DossierAllocationsModal';
 
@@ -214,6 +214,14 @@ const MainApp: React.FC = () => {
         {/* Vue active */}
         <main className="flex-1 overflow-y-auto p-3 sm:p-6 lg:p-8 pb-16 sm:pb-20">
           <div className="max-w-7xl mx-auto">
+            <Suspense
+              fallback={
+                <div className="min-h-48 flex items-center justify-center gap-3 text-sm text-slate-500" role="status" aria-live="polite">
+                  <Loader2 className="w-5 h-5 animate-spin text-emerald-700" />
+                  Chargement de la vue…
+                </div>
+              }
+            >
             {activeTab === 'dashboard' && (
               <DashboardView
                 onOpenNewAdherent={handleOpenNewAdherent}
@@ -293,6 +301,7 @@ const MainApp: React.FC = () => {
             {activeTab === 'parametres' && <ParametresView />}
 
             {activeTab === 'journal' && <JournalView />}
+            </Suspense>
           </div>
         </main>
       </div>
@@ -325,6 +334,7 @@ const MainApp: React.FC = () => {
       />
 
       {/* Modale Fiche Détails d'adhérent & Historique */}
+      <Suspense fallback={null}>
       <AdherentDetailsModal
         isOpen={isAdherentDetailsOpen}
         onClose={() => setIsAdherentDetailsOpen(false)}
@@ -336,6 +346,7 @@ const MainApp: React.FC = () => {
         onOpenImmatriculer={handleImmatriculerAdherent}
         onOpenDossier={handleOpenDossier}
       />
+      </Suspense>
 
       {/* Modale de validation d'immatriculation CNPS */}
       <ImmatriculationModal
@@ -352,6 +363,7 @@ const MainApp: React.FC = () => {
       />
 
       {/* Modale Reçu Officiel imprimable */}
+      <Suspense fallback={null}>
       <ReceiptModal
         isOpen={isReceiptModalOpen}
         onClose={() => setIsReceiptModalOpen(false)}
@@ -369,6 +381,7 @@ const MainApp: React.FC = () => {
         allCotisations={cotisations}
         defaultTypeMontant="CUMUL_MENSUEL"
       />
+      </Suspense>
 
       {/* Modale de Sécurité Code PIN 0000 */}
       <PinConfirmModal

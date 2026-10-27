@@ -21,7 +21,7 @@ test('rapprochement global : solde réel en banque = versements − réserve CNP
   const cot = num((await sql('SELECT SUM(montant) s FROM cotisations')).s);
   const dep = num((await sql('SELECT SUM(montant) s FROM depenses_courantes')).s);
   assert.equal(r.fondsBanque.total, vrs);
-  assert.equal(r.fondsBanque.nombre, 3);
+  assert.equal(r.fondsBanque.nombre, num((await sql('SELECT COUNT(*) n FROM versements_bancaires')).n));
   assert.equal(r.reserveCnps.total, cot, 'réserve = cotisations perçues');
   assert.equal(r.soldeReelBanque, r2(vrs - cot));
   assert.equal(r.tauxCouverture, r2((vrs / cot) * 100));
@@ -29,7 +29,11 @@ test('rapprochement global : solde réel en banque = versements − réserve CNP
   assert.equal(r2(r.flux.decaissementsExploitation.total + r.flux.decaissementsApportPca.total), dep);
   assert.equal(r.flux.totalDecaissements, dep);
   assert.equal(r.flux.soldeNet, r2(cot - dep));
-  assert.equal(r2(r.reserveCnps.adherents.reduce((s, a) => s + a.montantReserve, 0)), cot, 'somme des réserves individuelles = réserve globale');
+  assert.equal(
+    r2(r.reserveCnps.adherents.reduce((s, a) => s + a.montantReserve, 0) + r.reserveCnps.cotisationsNonAffectees.total),
+    cot,
+    'réserves attribuées + non affectées = réserve globale',
+  );
   // origine des fonds : lue de la règle métier serveur (pas du front)
   const exp = (await h.query("SELECT COALESCE(SUM(montant),0) s FROM depenses_courantes WHERE origine_fonds = 'Exploitation (Cotisations CNPS)'"))[0].s;
   assert.equal(r.flux.decaissementsExploitation.total, num(exp));
@@ -68,10 +72,10 @@ test('état mensuel : cotisations de la période, ventilations, état nominatif 
   assert.ok(e.cotisations.liste.every((c, i, a) => i === 0 || a[i - 1].datePaiement >= c.datePaiement), 'triées de la plus récente à la plus ancienne');
   assert.equal(r2(e.statsParMode.reduce((s, m) => s + m.montant, 0)), e.cotisations.total);
   assert.equal(r2(e.statsParAgent.reduce((s, m) => s + m.montant, 0)), e.cotisations.total);
-  assert.equal(e.nominatif.length, 7);
-  assert.equal(r2(e.nominatif.reduce((s, n) => s + n.montantMois, 0)), e.cotisations.total);
-  assert.equal(e.comptes.tous, 7);
-  assert.equal(e.comptes.cotisants + e.comptes.nonCotisants, 7);
+  assert.equal(e.nominatif.length, num((await sql('SELECT COUNT(*) n FROM adherents')).n));
+  assert.equal(r2(e.nominatif.reduce((s, n) => s + n.montantMois, 0) + e.cotisations.nonAffectees.total), e.cotisations.total);
+  assert.equal(e.comptes.tous, e.nominatif.length);
+  assert.equal(e.comptes.cotisants + e.comptes.nonCotisants, e.nominatif.length);
   for (const n of e.nominatif) {
     const cumul = num((await sql('SELECT COALESCE(SUM(montant),0) s FROM cotisations WHERE matricule = ?', [n.adherent.matricule])).s);
     assert.equal(n.cumulTotal, cumul, `${n.adherent.matricule} : cumul`);
@@ -98,9 +102,9 @@ test('tableau de bord : compteurs d\'adhérents et de dossiers calculés par le 
   assert.equal(d.adherents.immatricules, num((await sql("SELECT COUNT(*) n FROM adherents WHERE statut_immatriculation = 'Immatriculé'")).n));
   assert.equal(d.adherents.immatricules + d.adherents.nonImmatricules, total);
   assert.equal(d.adherents.aJour + d.adherents.nonAJour, total);
-  const seuil = num((await sql('SELECT COUNT(*) n FROM (SELECT matricule, SUM(montant) s FROM cotisations GROUP BY matricule HAVING s >= 15000) t')).n);
+  const seuil = num((await sql('SELECT COUNT(*) n FROM adherents a WHERE (SELECT COALESCE(SUM(c.montant),0) FROM cotisations c WHERE c.adherent_id = a.id OR c.matricule = a.matricule) >= 15000')).n);
   assert.equal(d.adherents.seuilAtteint, seuil);
-  const aImmat = num((await sql("SELECT COUNT(*) n FROM adherents a WHERE a.statut_immatriculation <> 'Immatriculé' AND (SELECT COALESCE(SUM(montant),0) FROM cotisations c WHERE c.matricule = a.matricule) >= 15000")).n);
+  const aImmat = num((await sql("SELECT COUNT(*) n FROM adherents a WHERE a.statut_immatriculation <> 'Immatriculé' AND (SELECT COALESCE(SUM(c.montant),0) FROM cotisations c WHERE c.adherent_id = a.id OR c.matricule = a.matricule) >= 15000")).n);
   assert.equal(d.adherents.aImmatriculer, aImmat);
   const alertes = (await h.call('GET', '/alertes?type=DOSSIER_ALLOCATIONS', { token })).data;
   assert.equal(d.dossiers.aConstituer, alertes.length, 'la tuile « dossiers à constituer » = les alertes de dossier');
@@ -127,10 +131,11 @@ test('versements : repères (précédent / actuel) joints par le serveur, premie
   assert.equal(suivi.totalMontant, r2(suivi.cotisations.reduce((s, c) => s + c.montant, 0)));
 
   // un nouveau versement sans point d'arrêt explicite : le serveur le calcule
-  await h.call('POST', '/cotisations', { token: await h.tokens.caisse(), body: { matricule: 'COSITI-0001', datePaiement: '2026-09-20', montant: 5000, modePaiement: 'Espèces' } });
+  const ajout = await h.call('POST', '/cotisations', { token: await h.tokens.caisse(), body: { matricule: 'COSITI-0001', datePaiement: '2030-09-20', montant: 5000, modePaiement: 'Espèces' } });
+  assert.equal(ajout.status, 201, JSON.stringify(ajout.body));
   const apres = (await h.call('GET', '/versements/suivi/en-attente', { token })).data;
   assert.ok(apres.nombre >= 1);
-  assert.equal(apres.cotisations.at(-1).datePaiement, '2026-09-20');
+  assert.ok(apres.cotisations.some((c) => c.id === ajout.data.id && c.datePaiement === '2030-09-20'));
 });
 
 test('paie : tranche légale et aperçu en direct = ce que le serveur enregistre', async () => {
@@ -159,7 +164,7 @@ test('paie : tranche légale et aperçu en direct = ce que le serveur enregistre
 
 test('paie : récapitulatif, déclarations CNPS / fiscale et paie CNPS des adhérents = SQL et barème serveur', async () => {
   const token = await h.tokens.daf();
-  const mois = '2026-03';
+  const mois = (await sql('SELECT mois FROM bulletins_paie ORDER BY mois LIMIT 1')).mois;
   const recap = (await h.call('GET', `/paie/recap?mois=${mois}`, { token })).data;
   const brut = num((await sql('SELECT COALESCE(SUM(total_gains_bruts),0) s FROM bulletins_paie WHERE mois = ?', [mois])).s);
   const net = num((await sql('SELECT COALESCE(SUM(net_a_payer),0) s FROM bulletins_paie WHERE mois = ?', [mois])).s);

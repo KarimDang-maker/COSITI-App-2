@@ -6,8 +6,6 @@ import { repos } from './repository.js';
 import { TABLES } from './tables.js';
 import { splitStatements } from './sql.js';
 import { hashSecret } from '../services/security.js';
-import { calculerBulletinPaie } from '../utils/paie.js';
-import { adherentInput } from '../services/paie.js';
 import { newId, nowIso } from '../utils/ids.js';
 
 const BANQUES_DEFAUT = [
@@ -31,8 +29,6 @@ const PARAMETRES_DEFAUT = {
   dernierNumeroMatricule: 0,
 };
 
-const complements = () => JSON.parse(readFileSync(new URL('./employes-complements.json', import.meta.url), 'utf8'));
-
 export async function seedBanques() {
   for (const nom of BANQUES_DEFAUT) await repos.banques.insert({ id: '0', nom, actif: true });
 }
@@ -53,6 +49,7 @@ async function runDumpInserts(path) {
     await conn.query('SET NAMES utf8mb4');
     await conn.beginTransaction();
     try {
+      for (const table of ['dossier_pieces', 'dossier_historiques', 'decisions_reunions']) await conn.query(`DELETE FROM \`${table}\``);
       for (const def of Object.values(TABLES)) await conn.query(`DELETE FROM \`${def.table}\``);
       await conn.query('DELETE FROM `refresh_tokens`');
       for (const stmt of inserts) await conn.query(stmt);
@@ -69,18 +66,18 @@ async function runDumpInserts(path) {
 
 /**
  * Complète les données importées pour que l'application fonctionne :
- *  - hache le code de confirmation (le dump le contient en clair) et initialise la séquence des matricules
- *  - crée les identifiants de connexion (mot de passe + code PIN HACHÉS) des comptes du dump
- *  - complète la fiche des salariés et le détail des bulletins (colonnes absentes du dump)
+ *  - ajoute un hash du code de confirmation sans effacer la valeur source
+ *  - initialise les identifiants manquants des comptes importés
+ * Les données métier du dump restent inchangées : les compléments paie/salariés sont gérés séparément.
  */
 async function finaliserImport() {
   const report = { bulletinsDetailles: 0, bulletinsEcarts: [], comptesCrees: 0, parametresInitialises: false, salariesCompletes: 0 };
 
-  // 1. Paramètres : le code de confirmation du dump est en clair ; on ne garde que son hash. Séquence des matricules.
+  // 1. Paramètres : ajouter un hash utilisable par l'application en conservant la valeur source. Séquence des matricules.
   const [par] = await query('SELECT code_confirmation_securite AS code, code_confirmation_hash AS hash, dernier_numero_matricule AS seq FROM parametres WHERE id = 1');
   if (par && !par.hash) {
     const code = (par.code || '').trim() || '0000';
-    await query("UPDATE parametres SET code_confirmation_hash = ?, code_confirmation_securite = '' WHERE id = 1", [await hashSecret(code)]);
+    await query('UPDATE parametres SET code_confirmation_hash = ? WHERE id = 1', [await hashSecret(code)]);
     report.parametresInitialises = true;
   }
   if (par && !par.seq) {
@@ -94,7 +91,6 @@ async function finaliserImport() {
   for (const u of await repos.utilisateurs.all()) {
     if (u.passwordHash) continue;
     await repos.utilisateurs.patch(u.id, {
-      email: u.email.toLowerCase(),
       passwordHash: await hashSecret(config.seed.defaultPassword),
       mustChangePassword: config.seed.forcePasswordChange,
       failedAttempts: 0,
@@ -103,43 +99,8 @@ async function finaliserImport() {
     });
     report.comptesCrees++;
   }
-  // anciennes colonnes du dump (codes en clair, remplacés par les hash) : purgées seulement là où il en reste
-  // Plus aucun code PIN de compte : la connexion se fait uniquement par e-mail + mot de passe (codes obsolètes effacés)
-  await query('UPDATE utilisateurs SET code_pin = NULL, code_acces = NULL, pin_hash = NULL WHERE code_pin IS NOT NULL OR code_acces IS NOT NULL OR pin_hash IS NOT NULL');
-
-  // 3. Fiches salariés (colonnes absentes du dump) — les valeurs du dump restent prioritaires
-  const comp = complements();
-  for (const e of await repos.employes.all()) {
-    const extra = comp[e.id];
-    if (extra && !e.telephone) {
-      await repos.employes.patch(e.id, extra);
-      report.salariesCompletes++;
-    }
-  }
-
-  // 4. Détail des bulletins (le dump ne contient que brut / net / statut)
-  for (const row of await repos.bulletins_paie.all()) {
-    if (row.trancheLoi) continue;
-    const isAdh = !String(row.employeId).startsWith('emp-');
-    const base = isAdh
-      ? { adherent: adherentInput(await repos.adherents.get(row.employeId)), typeBeneficiaire: 'ADHERENT_CNPS', salaireBaseOptionnel: row.salaireBase }
-      : { employe: await repos.employes.get(row.employeId) };
-    const full = calculerBulletinPaie({ ...base, mois: row.mois, bulletinNumero: row.bulletinNumero, statut: row.statut, dateEdition: `${row.mois}-28`, validePar: 'Direction financière (import)' });
-    if (full.netAPayer !== row.netAPayer || full.totalGainsBruts !== row.totalGainsBruts) {
-      report.bulletinsEcarts.push({ id: row.id, dump: { brut: row.totalGainsBruts, net: row.netAPayer }, recalcule: { brut: full.totalGainsBruts, net: full.netAPayer } });
-    }
-    // les montants du dump font foi pour les colonnes qu'il contient
-    await repos.bulletins_paie.replace({
-      ...full,
-      id: row.id,
-      totalGainsBruts: row.totalGainsBruts,
-      netAPayer: row.netAPayer,
-      salaireBase: row.salaireBase,
-      createdAt: row.createdAt,
-      dateValidation: row.statut === 'Brouillon' ? undefined : full.dateEdition,
-    });
-    report.bulletinsDetailles++;
-  }
+  // Ne pas recalculer les bulletins ni compléter les fiches à partir d'hypothèses au démarrage.
+  // Les données et colonnes métier du dump doivent rester la source de vérité.
   return report;
 }
 
@@ -182,13 +143,17 @@ export async function ensureSuperAdmin() {
 const superAdminNote = (r) =>
   r && `Compte Super Administrateur créé : ${r.email}${r.generated ? ` — mot de passe temporaire généré, à noter maintenant : ${r.password}` : ` (mot de passe : SUPERADMIN_PASSWORD)`}.`;
 
-/** Remplace TOUTES les données par celles du dossier database_mysql/ et recrée les identifiants de connexion. */
+/** Import explicite du dump : destructif, à réserver à une opération opérateur avec sauvegarde préalable. */
 export async function importDump({ path = config.seed.dumpPath } = {}) {
   const statements = await runDumpInserts(path);
   const report = await finaliserImport();
   const superAdmin = await ensureSuperAdmin();
   const counts = {};
   for (const [name, def] of Object.entries(TABLES)) counts[def.table] = await repos[name].count();
+  for (const table of ['dossier_pieces', 'dossier_historiques', 'decisions_reunions']) {
+    const [{ n }] = await query(`SELECT COUNT(*) AS n FROM \`${table}\``);
+    counts[table] = Number(n);
+  }
   return { source: path, statements, counts, superAdmin: superAdmin && { email: superAdmin.email, generated: superAdmin.generated, password: superAdmin.generated ? superAdmin.password : undefined }, ...report };
 }
 
@@ -210,7 +175,7 @@ export async function bootstrap() {
     if (config.seed.fromDump) {
       const r = await importDump();
       log.push(`Base vide : données de ${r.source} importées (${Object.entries(r.counts).map(([t, c]) => `${t}=${c}`).join(', ')}).`);
-      log.push(`Identifiants créés pour les ${r.counts.utilisateurs - (r.superAdmin ? 1 : 0)} comptes du dump. Mot de passe initial : « ${config.seed.defaultPassword} » (stocké haché).`);
+      log.push(`Identifiants temporaires créés pour les ${r.counts.utilisateurs - (r.superAdmin ? 1 : 0)} comptes importés ; changement obligatoire à la première connexion.`);
       if (r.superAdmin) log.push(`Compte Super Administrateur : ${r.superAdmin.email}${r.superAdmin.generated ? ` — mot de passe temporaire généré, à noter maintenant : ${r.superAdmin.password}` : ' (mot de passe : SUPERADMIN_PASSWORD)'}.`);
       if (r.bulletinsEcarts.length) log.push(`Attention : ${r.bulletinsEcarts.length} bulletin(s) dont le recalcul diffère du dump (valeurs du dump conservées).`);
     } else {
@@ -227,8 +192,8 @@ export async function bootstrap() {
   // Base alimentée par l'import brut du dump (mysql < cositi_database_mysql_dump.sql) : on ajoute ce qui manque
   // (identifiants de connexion, hash du code de confirmation, détail des bulletins...). Sans effet sur une base déjà prête.
   const p = await finaliserImport();
-  if (p.comptesCrees) log.push(`${p.comptesCrees} compte(s) sans identifiants : mot de passe initial « ${config.seed.defaultPassword} » créé (haché).`);
-  if (p.parametresInitialises) log.push('Code de confirmation du dump (en clair) haché puis effacé.');
+  if (p.comptesCrees) log.push(`${p.comptesCrees} compte(s) sans identifiants : identifiants temporaires hachés créés, changement obligatoire à la première connexion.`);
+  if (p.parametresInitialises) log.push('Hash de sécurité du code de confirmation ajouté ; valeur source conservée.');
   if (p.bulletinsDetailles) log.push(`${p.bulletinsDetailles} bulletin(s) de paie détaillé(s).`);
   const sa = await ensureSuperAdmin();
   if (sa) log.push(superAdminNote(sa));

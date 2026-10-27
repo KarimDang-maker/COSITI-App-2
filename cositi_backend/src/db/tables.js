@@ -74,7 +74,7 @@ export const TABLES = {
     fields: {
       id: 's', dateHeure: 't', utilisateur: 's', role: 's', typeOperation: 's', entite: 's', matricule: 's', description: 's',
       details: 's', utilisateurId: 's', adherentNom: 's', agentEnregistreur: 's', action: 's', codeSecuriteValide: 'b',
-      anciennesInformations: 's', nouvellesInformations: 's',
+      anciennesInformations: 's', nouvellesInformations: 's', dateAffichage: 's',
     },
     ignore: ['date', 'adherentMatricule'],
     computed: {
@@ -135,7 +135,18 @@ export const TABLES = {
     fields: {
       id: 's', bulletinNumero: 's', employeId: 's', mois: 's', periodeLibelle: 's', salaireBase: 'n', totalGainsBruts: 'n',
       netAPayer: 'n', statut: 's', employeMatricule: 's', employeNomComplet: 's', typeBeneficiaire: 's', dateEdition: 'd',
-      datePaiement: 'd', validePar: 's', dateValidation: 'd', depenseAssocieeId: 's', createdAt: 't', updatedAt: 't',
+      datePaiement: 'd', validePar: 's', dateValidation: 't', depenseAssocieeId: 's', createdAt: 't', updatedAt: 't',
+      employePoste: 's', employeDepartement: 's', employeDateEmbauche: 'd', employeNumeroCnps: 's', employeNumeroCmu: 's',
+      employePartsFiscales: 'n', modePaiement: 's', banqueVirement: 's', compteVirement: 's', trancheLoi: 's',
+      trancheLibelle: 's', explicationLegale: 's', heuresTravaillees: 'n', joursTravailles: 'i', sursalaire: 'n',
+      primeAnciennete: 'n', primeRendement: 'n', indemniteTransport: 'n', indemniteLogement: 'n', autresPrimes: 'n',
+      salaireBrutImposable: 'n', cnpsPvidSalariale: 'n', cmuSalariale: 'n', totalRetenuesSocialesSalariales: 'n',
+      irppSalariale: 'n', cacSalariale: 'n', cfcSalariale: 'n', tdlSalariale: 'n', ravSalariale: 'n',
+      totalRetenuesFiscalesSalariales: 'n', acomptesAvances: 'n', retenuesDiverses: 'n', totalAutresRetenues: 'n',
+      totalRetenuesSalariales: 'n', netImposable: 'n', netAPayerEnLettres: 's', cnpsPvidPatronale: 'n',
+      cnpsPfPatronale: 'n', cnpsAtmpPatronale: 'n', fnePatronale: 'n', cfcPatronale: 'n', totalChargesPatronales: 'n',
+      coutTotalEmployeur: 'n', adherentId: 's', adherentMatricule: 's', adherentNumeroCnps: 's', sansEnfant: 'b',
+      notesCommentaires: 's',
     },
     // totaux de déclaration calculés à la lecture : part patronale CNPS (PVID + PF + AT/MP) et total à verser à la CNPS
     ignore: ['totalCnpsPatronale', 'totalCotisationsCnps'],
@@ -147,7 +158,7 @@ export const TABLES = {
     },
   },
   partenaires: {
-    table: 'partenaires',
+    table: 'partenaires_direction',
     fields: {
       id: 's', nomOrganisation: 's', sigle: 's', secteur: 's', personneContact: 's', titreContact: 's', telephone: 's',
       email: 's', adresse: 's', statut: 's', priorite: 's', potentielSynergie: 's', datePremierContact: 'd',
@@ -155,7 +166,7 @@ export const TABLES = {
     },
   },
   rendez_vous: {
-    table: 'rendez_vous',
+    table: 'rendez_vous_direction',
     fields: {
       id: 's', titre: 's', partenaireId: 's', nomInterlocuteurOuPartenaire: 's', date: 'd', heure: 's', dureeEstimee: 's',
       modalite: 's', lieuPrecision: 's', participantsDirection: 's', responsablePrincipal: 's', statut: 's',
@@ -165,12 +176,12 @@ export const TABLES = {
     columns: { date: 'date_rdv' },
   },
   notes_direction: {
-    table: 'notes_direction',
+    table: 'notes_specifiques_direction',
     fields: {
       id: 's', titre: 's', date: 'd', categorie: 's', partenaireLie: 's', rendezVousLie: 's', contenu: 's', pointsCles: 'j',
       prochaineEcheance: 'd', niveauConfidentialite: 's', auteur: 's', createdAt: 't', updatedAt: 't',
     },
-    columns: { date: 'date_note' },
+    columns: { date: 'date_note', pointsCles: 'points_cles_json' },
   },
   rapports_reunions: {
     table: 'rapports_reunions',
@@ -180,16 +191,16 @@ export const TABLES = {
       decisions: 'j', prochaineReunionDate: 'd', statut: 's', redigePar: 's', piecesJointesOuNotes: 's',
       createdAt: 't', updatedAt: 't',
     },
-    columns: { date: 'date_reunion' },
+    columns: { date: 'date_reunion', decisions: 'decisions_json' },
   },
   rapports_agents: {
-    table: 'rapports_agents',
+    table: 'rapports_agents_terrain',
     fields: {
       id: 's', dateRapport: 'd', gestionnaireId: 's', agentNom: 's', agentTelephone: 's', zoneSecteur: 's', typeMission: 's',
       adherentsVisites: 'i', adherentsCotisants: 'i', nouvellesAdhesions: 'i', montantEspecesRemis: 'n',
       montantMobileMoneyDeclare: 'n', montantTotalCollecte: 'n', conformiteCaisse: 's', ecartMontant: 'n',
       justificationEcart: 's', difficultesRencontrees: 's', actionsDemain: 's', observations: 's', commentairesCaissiere: 's',
-      saisiPar: 's', dateHeureSaisie: 't', statutValidation: 's', visaDaf: 's', createdAt: 't', updatedAt: 't',
+      saisiPar: 's', dateHeureSaisie: 's', statutValidation: 's', visaDaf: 's', createdAt: 't', updatedAt: 't',
     },
     // alias historiques du front (totalCollecte, explicationEcart...) : relus à partir des champs canoniques
     ignore: ['totalCollecte', 'explicationEcart', 'difficultesTerrain', 'actionsPrioritaires'],

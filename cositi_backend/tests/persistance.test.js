@@ -515,8 +515,10 @@ test('listes : pagination, recherche et filtres s\'appuient sur la base (aucune 
   assert.equal(p1.data.length, 5);
   assert.equal(p1.meta.total, await count('cotisations'));
   assert.ok(!p1.data.some((c) => p2.data.some((d) => d.id === c.id)), 'pages disjointes');
-  const q = (await h.call('GET', '/adherents?q=KOUAM', { token })).body;
-  assert.ok(q.data.length >= 1 && q.data.every((a) => /kouam/i.test(JSON.stringify(a))));
+  const premier = (await h.call('GET', '/adherents?pageSize=1', { token })).data[0];
+  const terme = premier.nom.slice(0, 4);
+  const q = (await h.call('GET', `/adherents?q=${encodeURIComponent(terme)}`, { token })).body;
+  assert.ok(q.data.length >= 1 && q.data.every((a) => JSON.stringify(a).toLocaleLowerCase().includes(terme.toLocaleLowerCase())));
   assert.equal((await h.call('GET', "/adherents?q=%27%3B%20DROP%20TABLE%20adherents%3B%20--", { token })).status, 200, 'injection SQL inoffensive');
   assert.ok(await count('adherents') > 0);
   const f = (await h.call('GET', '/cotisations?modePaiement=Wave', { token })).body;
@@ -529,6 +531,7 @@ test('mise à jour logicielle puis réinitialisation de démonstration : effacem
   const pca = await h.tokens.pca();
   // sans code de maintenance : refusé, rien n'est effacé
   const avant = await count('adherents');
+  const banquesAvant = await count('banques_partenaires');
   assert.ok(avant > 0);
   assert.equal((await h.call('POST', '/systeme/mise-a-jour', { token: pca })).status, 400);
   assert.equal((await h.call('POST', '/systeme/mise-a-jour', { token: pca, headers: { 'X-Maintenance-Code': '0000' } })).status, 403);
@@ -536,25 +539,26 @@ test('mise à jour logicielle puis réinitialisation de démonstration : effacem
   // avec le bon code : données d'exploitation effacées, comptes / paramètres / salariés / banques conservés
   const ok = await h.call('POST', '/systeme/mise-a-jour', { token: pca, headers: { 'X-Maintenance-Code': '1111' } });
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
-  for (const t of ['adherents', 'cotisations', 'dossiers_allocations', 'depenses_courantes', 'versements_bancaires', 'frais_mobile_money', 'rapports_agents']) assert.equal(await count(t), 0, t);
+  for (const t of ['adherents', 'cotisations', 'dossiers_allocations', 'depenses_courantes', 'versements_bancaires', 'frais_mobile_money', 'rapports_agents_terrain']) assert.equal(await count(t), 0, t);
   assert.equal(num((await h.query('SELECT dernier_numero_matricule m FROM parametres WHERE id = 1'))[0].m), 0);
   assert.ok(await count('utilisateurs') >= 7, 'comptes conservés');
-  assert.ok(await count('employes') >= 6 && await count('banques_partenaires') === 8);
+  assert.equal(await count('employes'), 6);
+  assert.equal(await count('banques_partenaires'), banquesAvant, 'catalogue des banques conservé');
   await h.restartDb();
   assert.equal(await count('adherents'), 0, 'effacement persistant');
 
   // réinitialisation de démonstration : le dump est rechargé
-  const dgTok = await h.login('dg@cositi-ci.org');
+  const dgTok = await h.tokens.dg();
   const reset = await h.call('POST', '/systeme/reset-demo', { token: dgTok, headers: CONFIRM });
   assert.equal(reset.status, 200, JSON.stringify(reset.body));
-  assert.equal(await count('adherents'), 7);
-  assert.equal(await count('cotisations'), 17);
-  assert.equal(await count('depenses_courantes'), 6);
-  assert.equal(await count('versements_bancaires'), 3);
-  assert.equal(await count('frais_mobile_money'), 5);
-  assert.equal(await count('bulletins_paie'), 14);
+  assert.equal(await count('adherents'), 186);
+  assert.equal(await count('cotisations'), 165);
+  assert.equal(await count('depenses_courantes'), 227);
+  assert.equal(await count('versements_bancaires'), 6);
+  assert.equal(await count('frais_mobile_money'), 6);
+  assert.equal(await count('bulletins_paie'), 6);
   // les identifiants de connexion sont recréés (hachés) : on peut se reconnecter
-  const l = await h.call('POST', '/auth/login', { body: { email: 'dg@cositi-ci.org', password: PW } });
+  const l = await h.call('POST', '/auth/login', { body: { email: await h.emailForRole('DG'), password: PW } });
   assert.equal(l.status, 200);
   assert.equal(await count('utilisateurs', 'password_hash IS NULL'), 0);
 });

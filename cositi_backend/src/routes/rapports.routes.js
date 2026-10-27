@@ -6,7 +6,7 @@ import { validate, yearMonth, idParam } from '../middleware/validate.js';
 import { ok } from '../utils/respond.js';
 import { bornesMois, MOIS_FR } from '../utils/dates.js';
 import { rapprochement, etatMensuel } from '../services/rapports.js';
-import { generateAlerts, calculateAdherentStats } from '../utils/business.js';
+import { generateAlerts, calculateAdherentStats, estStatutImmatricule } from '../utils/business.js';
 import { sumMoney, groupSumMoney, addMoney, round2 } from '../utils/money.js';
 import { cotisationsEnAttente } from '../services/versements.js';
 import { getAdherentOrFail, cotisationsOf } from '../services/adherents.js';
@@ -76,12 +76,12 @@ router.get('/dashboard', async (req, res) => {
       nouveauxCeMois: adherents.filter((a) => (a.dateAdhesion || '').startsWith(ym)).length,
       sansGestionnaire: adherents.filter((a) => !a.gestionnaireId).length,
       actifs: adherents.filter((a) => a.statut === 'Actif').length,
-      immatricules: adherents.filter((a) => a.statutImmatriculation === 'Immatriculé').length,
-      nonImmatricules: adherents.filter((a) => a.statutImmatriculation !== 'Immatriculé').length,
+      immatricules: adherents.filter((a) => estStatutImmatricule(a.statutImmatriculation)).length,
+      nonImmatricules: adherents.filter((a) => !estStatutImmatricule(a.statutImmatriculation)).length,
       aJour: statsAdh.filter(({ st }) => st.statutCotisation === 'À jour').length,
       nonAJour: statsAdh.filter(({ st }) => st.statutCotisation !== 'À jour').length,
       seuilAtteint: statsAdh.filter(({ st }) => st.totalCumule >= seuil).length,
-      aImmatriculer: statsAdh.filter(({ a, st }) => st.totalCumule >= seuil && a.statutImmatriculation !== 'Immatriculé').length,
+      aImmatriculer: statsAdh.filter(({ a, st }) => st.totalCumule >= seuil && !estStatutImmatricule(a.statutImmatriculation)).length,
     },
     cotisations: {
       nombre: cotisations.length,

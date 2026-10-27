@@ -38,10 +38,11 @@ const page = await browser.newPage();
 const cdp = await page.createCDPSession();
 await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: DL });
 
-const problems = [];
+const consoleErrors = [];
+const pageErrors = [];
 const calls = [];
-page.on('console', (m) => m.type() === 'error' && problems.push(`console: ${m.text()}`));
-page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
+page.on('console', (m) => m.type() === 'error' && consoleErrors.push(`console: ${m.text()}`));
+page.on('pageerror', (e) => pageErrors.push(e.message));
 page.on('response', (r) => {
   const u = r.url();
   if (u.includes('/api/')) calls.push({ method: r.request().method(), url: u.split('/api')[1], status: r.status() });
@@ -64,7 +65,10 @@ async function allerA(label) {
     el.click();
     return true;
   }, label);
-  await sleep(1500);
+  if (ok) {
+    await page.waitForFunction(() => !document.body.innerText.includes('Chargement de la vue…'), { timeout: 30000 });
+    await sleep(500); // laisse aux requêtes du modèle serveur le temps d'alimenter la vue
+  }
   return ok;
 }
 /** clique dès que le bouton est actif (la modale charge son catalogue depuis le serveur) */
@@ -189,8 +193,13 @@ if (fichier) {
   await clickTexte('Valider', 'button');
   await page.waitForFunction(() => document.body.innerText.includes('Import effectué'), { timeout: 60000 });
   check('import réel via l’interface avec code de confirmation', true);
-  const mod = calls.filter((c) => c.url.startsWith('/excel/import'));
-  check('appels /excel/import : simulation puis import réussis', mod.some((c) => c.status === 200) && !mod.some((c) => c.status >= 500));
+  // Un build servi sur un port différent déclenche un préflight CORS.
+  // Les réponses OPTIONS 204 sont attendues, mais ne sont pas des appels métier.
+  const mod = calls.filter((c) => c.method !== 'OPTIONS' && c.url.startsWith('/excel/import'));
+  const simulation = mod.filter((c) => c.url.includes('mode=simulation'));
+  const importReel = mod.filter((c) => c.url.includes('mode=import'));
+  check('simulation Excel : une réponse 200', simulation.length === 1 && simulation[0].status === 200, JSON.stringify(simulation.map((c) => c.status)));
+  check('import Excel : défi code 400 puis écriture confirmée 200', importReel.length === 2 && importReel[0].status === 400 && importReel[1].status === 200, JSON.stringify(importReel.map((c) => c.status)));
 }
 
 // ================================================================ bilan
@@ -198,7 +207,11 @@ const bad = calls.filter((c) => c.status >= 500);
 check('aucune erreur serveur (5xx) pendant tout le parcours', bad.length === 0, JSON.stringify(bad.slice(0, 3)));
 const inattendus = calls.filter((c) => c.status >= 400 && ![401, 403, 409, 400, 422].includes(c.status));
 check('aucun statut d’erreur inattendu', inattendus.length === 0, JSON.stringify(inattendus.slice(0, 3)));
-check('aucune erreur JavaScript dans la console', problems.filter((p) => !/favicon|DevTools|Failed to load resource/i.test(p)).length === 0, problems.slice(0, 3).join(' | '));
+const erreurRessourceGenerique = consoleErrors.filter((p) => /Failed to load resource/i.test(p));
+const erreursConsoleNonAttribuees = consoleErrors.filter((p) => !/favicon|DevTools|Failed to load resource/i.test(p));
+const defisConfirmation400 = calls.filter((c) => c.url.includes('/excel/import') && c.url.includes('mode=import') && c.status === 400).length;
+check('erreurs console expliquées par le défi de confirmation attendu', erreursConsoleNonAttribuees.length === 0 && erreurRessourceGenerique.length <= defisConfirmation400, consoleErrors.slice(0, 3).join(' | '));
+check('aucune exception JavaScript frontend', pageErrors.length === 0, pageErrors.slice(0, 3).join(' | '));
 
 await page.screenshot({ path: path.join(WORK, 'final.png') });
 await browser.close();

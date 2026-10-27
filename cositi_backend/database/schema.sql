@@ -1,10 +1,9 @@
 -- =============================================================================
 -- COSITI — schéma MySQL de l'application (MySQL 8 / MariaDB 10.5+)
--- Reprend EXACTEMENT les tables et colonnes du dump `database_mysql/` et les complète :
+-- Reprend les tables et colonnes du dump `database/COSITI DATABASE/` et les complète :
 --   * identifiants de connexion (hachés) dans `utilisateurs`
 --   * colonnes manquantes pour que le backend gère 100 % des fonctionnalités du front
---   * tables absentes du dump : partenaires, rendez_vous, notes_direction,
---     rapports_reunions, rapports_agents, refresh_tokens
+--   * tables applicatives : refresh_tokens
 -- Le script est idempotent (CREATE TABLE IF NOT EXISTS) : il peut être rejoué sans risque.
 -- =============================================================================
 
@@ -22,6 +21,8 @@ CREATE TABLE IF NOT EXISTS `parametres` (
   `seuil_jours_retard_alerte` INT NOT NULL DEFAULT 10,
   `code_confirmation_securite` VARCHAR(50) NOT NULL DEFAULT '',          -- le dump y met "0000" en clair : vidé après hachage
   `code_confirmation_hash` VARCHAR(100) DEFAULT NULL,                    -- hash bcrypt du code de confirmation
+  `statuts_adherents` JSON DEFAULT NULL,
+  `statuts_dossiers` JSON DEFAULT NULL,
   `dernier_numero_matricule` INT NOT NULL DEFAULT 0,                     -- séquence COSITI-xxxx
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -268,6 +269,38 @@ CREATE TABLE IF NOT EXISTS `dossiers_allocations` (
   KEY `idx_dos_cnps` (`numero_cnps`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Suivi des dossiers de prestations familiales et sécurité sociale CNPS';
 
+CREATE TABLE IF NOT EXISTS `dossier_pieces` (
+  `id` VARCHAR(128) NOT NULL,
+  `dossier_id` VARCHAR(64) NOT NULL,
+  `adherent_id` VARCHAR(64) NOT NULL,
+  `piece_code` VARCHAR(32) NOT NULL,
+  `nom_piece` VARCHAR(255) NOT NULL,
+  `obligatoire` TINYINT(1) NOT NULL DEFAULT 1,
+  `recu` TINYINT(1) NOT NULL DEFAULT 0,
+  `date_reception` DATE DEFAULT NULL,
+  `fichier_ref` VARCHAR(255) DEFAULT NULL,
+  `notes` TEXT DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `idx_dp_dossier` (`dossier_id`),
+  INDEX `idx_dp_adherent` (`adherent_id`),
+  CONSTRAINT `fk_dp_dossier` FOREIGN KEY (`dossier_id`) REFERENCES `dossiers_allocations` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_dp_adherent` FOREIGN KEY (`adherent_id`) REFERENCES `adherents` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Pièces justificatives rattachées aux dossiers CNPS';
+
+CREATE TABLE IF NOT EXISTS `dossier_historiques` (
+  `id` VARCHAR(128) NOT NULL,
+  `dossier_id` VARCHAR(64) NOT NULL,
+  `adherent_id` VARCHAR(64) NOT NULL,
+  `date_action` VARCHAR(50) NOT NULL,
+  `auteur` VARCHAR(150) NOT NULL,
+  `action` TEXT NOT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `idx_dh_dossier` (`dossier_id`),
+  INDEX `idx_dh_adherent` (`adherent_id`),
+  CONSTRAINT `fk_dh_dossier` FOREIGN KEY (`dossier_id`) REFERENCES `dossiers_allocations` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_dh_adherent` FOREIGN KEY (`adherent_id`) REFERENCES `adherents` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Historique chronologique des actions sur les dossiers CNPS';
+
 CREATE TABLE IF NOT EXISTS `banques_partenaires` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `nom_banque` VARCHAR(150) NOT NULL,
@@ -326,8 +359,56 @@ CREATE TABLE IF NOT EXISTS `bulletins_paie` (
   `type_beneficiaire` VARCHAR(30) NOT NULL DEFAULT 'EMPLOYE',
   `date_edition` DATE DEFAULT NULL,
   `date_paiement` DATE DEFAULT NULL,
+  `employe_poste` VARCHAR(150) DEFAULT NULL,
+  `employe_departement` VARCHAR(150) DEFAULT NULL,
+  `employe_date_embauche` DATE DEFAULT NULL,
+  `employe_numero_cnps` VARCHAR(50) DEFAULT NULL,
+  `employe_numero_cmu` VARCHAR(50) DEFAULT NULL,
+  `employe_parts_fiscales` DECIMAL(4,2) NOT NULL DEFAULT 1.00,
+  `mode_paiement` VARCHAR(50) DEFAULT NULL,
+  `banque_virement` VARCHAR(150) DEFAULT NULL,
+  `compte_virement` VARCHAR(100) DEFAULT NULL,
+  `tranche_loi` VARCHAR(50) DEFAULT NULL,
+  `tranche_libelle` VARCHAR(150) DEFAULT NULL,
+  `explication_legale` TEXT DEFAULT NULL,
+  `heures_travaillees` DECIMAL(8,2) NOT NULL DEFAULT 173.33,
+  `jours_travailles` INT NOT NULL DEFAULT 30,
+  `sursalaire` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `prime_anciennete` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `prime_rendement` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `indemnite_transport` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `indemnite_logement` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `autres_primes` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `salaire_brut_imposable` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `cnps_pvid_salariale` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `cmu_salariale` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `total_retenues_sociales_salariales` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `irpp_salariale` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `cac_salariale` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `cfc_salariale` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `tdl_salariale` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `rav_salariale` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `total_retenues_fiscales_salariales` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `acomptes_avances` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `retenues_diverses` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `total_autres_retenues` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `total_retenues_salariales` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `net_imposable` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `net_a_payer_en_lettres` TEXT DEFAULT NULL,
+  `cnps_pvid_patronale` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `cnps_pf_patronale` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `cnps_atmp_patronale` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `fne_patronale` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `cfc_patronale` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `total_charges_patronales` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `cout_total_employeur` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  `adherent_id` VARCHAR(64) DEFAULT NULL,
+  `adherent_matricule` VARCHAR(50) DEFAULT NULL,
+  `adherent_numero_cnps` VARCHAR(50) DEFAULT NULL,
+  `sans_enfant` TINYINT(1) NOT NULL DEFAULT 0,
   `valide_par` VARCHAR(150) DEFAULT NULL,
-  `date_validation` DATE DEFAULT NULL,
+  `date_validation` DATETIME DEFAULT NULL,
+  `notes_commentaires` TEXT DEFAULT NULL,
   `depense_associee_id` VARCHAR(64) DEFAULT NULL,
   `details_json` JSON DEFAULT NULL,                                       -- détail complet du calcul (gains, retenues, charges patronales...)
   `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -342,6 +423,7 @@ CREATE TABLE IF NOT EXISTS `bulletins_paie` (
 CREATE TABLE IF NOT EXISTS `journal_operations` (
   `id` VARCHAR(64) NOT NULL,
   `date_heure` DATETIME(3) NOT NULL,
+  `date_affichage` VARCHAR(50) DEFAULT NULL,
   `utilisateur` VARCHAR(150) NOT NULL,
   `role` VARCHAR(100) NOT NULL,
   `type_operation` VARCHAR(100) NOT NULL,
@@ -365,9 +447,9 @@ CREATE TABLE IF NOT EXISTS `journal_operations` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Piste d audit et traçabilité des opérations sensibles';
 
 -- ---------------------------------------------------------------------------
--- Tables absentes du dump (modules Direction, PV de réunion, rapports agents)
+-- Tables de Direction présentes dans le dump COSITI
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS `partenaires` (
+CREATE TABLE IF NOT EXISTS `partenaires_direction` (
   `id` VARCHAR(64) NOT NULL,
   `nom_organisation` VARCHAR(200) NOT NULL,
   `sigle` VARCHAR(50) DEFAULT NULL,
@@ -389,7 +471,7 @@ CREATE TABLE IF NOT EXISTS `partenaires` (
   KEY `idx_part_statut` (`statut`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Partenaires institutionnels (Direction)';
 
-CREATE TABLE IF NOT EXISTS `rendez_vous` (
+CREATE TABLE IF NOT EXISTS `rendez_vous_direction` (
   `id` VARCHAR(64) NOT NULL,
   `titre` VARCHAR(250) NOT NULL,
   `partenaire_id` VARCHAR(64) DEFAULT NULL,
@@ -415,7 +497,7 @@ CREATE TABLE IF NOT EXISTS `rendez_vous` (
   KEY `idx_rdv_partenaire` (`partenaire_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agenda de la Direction (DG / DGA)';
 
-CREATE TABLE IF NOT EXISTS `notes_direction` (
+CREATE TABLE IF NOT EXISTS `notes_specifiques_direction` (
   `id` VARCHAR(64) NOT NULL,
   `titre` VARCHAR(250) NOT NULL,
   `date_note` DATE NOT NULL,
@@ -423,7 +505,7 @@ CREATE TABLE IF NOT EXISTS `notes_direction` (
   `partenaire_lie` VARCHAR(200) DEFAULT NULL,
   `rendez_vous_lie` VARCHAR(64) DEFAULT NULL,
   `contenu` MEDIUMTEXT NOT NULL,
-  `points_cles` JSON DEFAULT NULL,
+  `points_cles_json` JSON DEFAULT NULL,
   `prochaine_echeance` DATE DEFAULT NULL,
   `niveau_confidentialite` VARCHAR(60) NOT NULL,
   `auteur` VARCHAR(150) NOT NULL,
@@ -448,7 +530,7 @@ CREATE TABLE IF NOT EXISTS `rapports_reunions` (
   `participants_absents` TEXT DEFAULT NULL,
   `ordre_du_jour` TEXT NOT NULL,
   `synthese_discussions` MEDIUMTEXT NOT NULL,
-  `decisions` JSON DEFAULT NULL,
+  `decisions_json` JSON DEFAULT NULL,
   `prochaine_reunion_date` DATE DEFAULT NULL,
   `statut` VARCHAR(30) NOT NULL DEFAULT 'Brouillon',
   `redige_par` VARCHAR(150) NOT NULL,
@@ -460,7 +542,7 @@ CREATE TABLE IF NOT EXISTS `rapports_reunions` (
   KEY `idx_reu_statut` (`statut`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Procès-verbaux et rapports de réunion';
 
-CREATE TABLE IF NOT EXISTS `rapports_agents` (
+CREATE TABLE IF NOT EXISTS `rapports_agents_terrain` (
   `id` VARCHAR(64) NOT NULL,
   `date_rapport` DATE NOT NULL,
   `gestionnaire_id` VARCHAR(64) DEFAULT NULL,
@@ -482,7 +564,7 @@ CREATE TABLE IF NOT EXISTS `rapports_agents` (
   `observations` TEXT DEFAULT NULL,
   `commentaires_caissiere` TEXT DEFAULT NULL,
   `saisi_par` VARCHAR(150) NOT NULL,
-  `date_heure_saisie` DATETIME(3) DEFAULT NULL,
+  `date_heure_saisie` VARCHAR(50) DEFAULT NULL,
   `statut_validation` VARCHAR(40) NOT NULL DEFAULT 'Enregistré par Caissière',
   `visa_daf` VARCHAR(200) DEFAULT NULL,
   `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -492,3 +574,15 @@ CREATE TABLE IF NOT EXISTS `rapports_agents` (
   KEY `idx_ra_gest` (`gestionnaire_id`),
   KEY `idx_ra_statut` (`statut_validation`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Rapports journaliers des agents de terrain (saisie caissière)';
+
+CREATE TABLE IF NOT EXISTS `decisions_reunions` (
+  `id` VARCHAR(64) NOT NULL,
+  `reunion_id` VARCHAR(64) NOT NULL,
+  `description` TEXT NOT NULL,
+  `responsable` VARCHAR(200) NOT NULL,
+  `echeance` DATE DEFAULT NULL,
+  `statut` VARCHAR(50) NOT NULL DEFAULT 'À faire',
+  PRIMARY KEY (`id`),
+  KEY `idx_dec_reunion` (`reunion_id`),
+  CONSTRAINT `fk_dec_reunion` FOREIGN KEY (`reunion_id`) REFERENCES `rapports_reunions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Décisions rattachées aux rapports de réunion';
